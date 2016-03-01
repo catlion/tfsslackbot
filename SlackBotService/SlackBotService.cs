@@ -145,6 +145,11 @@ namespace SlackBot
         /// <param name="e">The <see cref="ExceptionEventArgs"/> instance containing the event data.</param>
         void OnError(object sender, ExceptionEventArgs e)
         {
+            if (_isConsole)
+            {
+                Console.Error.WriteLine(e.Exception);
+                // Also log to event log so that it's easier to test when debugging...
+            }
             EventLog.WriteEntry(e.Exception.ToString(), EventLogEntryType.Error, 1);
         }
 
