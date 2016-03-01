@@ -17,7 +17,7 @@ Open up SlackBotService.exe.config and make the following edits:
    * Fill in the project attribute.
    * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in. (This is currently the only auth method that this bot supports)
 
-Open up an elevated command prompt and `cd` to the directory, then run:
+Open up an elevated developer command prompt and `cd` to the directory, then run:
 
     installutil /i slackbotservice.exe
     net start slackbotservice
