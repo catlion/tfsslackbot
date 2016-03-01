@@ -47,5 +47,11 @@ namespace SlackBot.Tfs.Configuration
         {
             get { return (string)base["project"]; }
         }
+
+        [ConfigurationProperty("accessToken", IsRequired = true)]
+        public string AccessToken
+        {
+            get { return (string)base["accessToken"]; }
+        }
     }
 }

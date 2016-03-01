@@ -11,10 +11,11 @@ Open up SlackBotService.exe.config and make the following edits:
  * `<client token="" />`
    * Put your [slack bot integration token](https://api.slack.com/bot-users)
      into the token attribute.
- * `<add name="tfs" projectCollection="" project=""/>`
+ * `<add name="tfs" projectCollection="" project="" accessToekn=""/>`
    * Put your project collection into the projectCollection attribute:  (e.g.
      `http://mytfs:8080/tfs/MyCollection`)
    * Fill in the project attribute.
+   * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in. (This is currently the only auth method that this bot supports)
 
 Open up an elevated command prompt and `cd` to the directory, then run:
 
