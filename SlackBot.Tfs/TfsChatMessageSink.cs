@@ -95,9 +95,16 @@ namespace SlackBot.Tfs
                     wi = _wis.GetWorkItem(XmlConvert.ToInt32(id));
 
                 }
-                catch (Exception e)
+                catch (VssServiceException ex)
                 {
-                    continue;
+                    // Ignore items that don't exist
+                    // "TF401232: Work item 1 does not exist, or you do not have permissions to read it."
+                    if (ex.Message.StartsWith("TF401232:"))
+                    {
+                        await slack.SendAsync(message.CreateReply(string.Format("WorkItem {0} not found", id)));
+                        return ChatMessageSinkResult.Complete;
+                    }
+                    throw;
                 }
 
                 var link = _tswaHyperlink.GetWorkItemEditorUrl(wi.Id);
