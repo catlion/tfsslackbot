@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 2013
-VisualStudioVersion = 12.0.31101.0
+# Visual Studio 14
+VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SlackBotService", "SlackBotService\SlackBotService.csproj", "{0FFC591C-C085-4A8E-9390-77C1AA3BC51B}"
 	ProjectSection(ProjectDependencies) = postProject
@@ -18,13 +18,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = ".nuget", ".nuget", "{E139D3
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SlackBot.Tfs", "SlackBot.Tfs\SlackBot.Tfs.csproj", "{0953B247-3D9A-4881-A797-53C6B3A42CAC}"
-EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Dependencies", "Dependencies", "{E0A9778B-9D33-472B-9B40-F61859BF9DA0}"
-	ProjectSection(SolutionItems) = preProject
-		Dependencies\Microsoft.TeamFoundation.Client.dll = Dependencies\Microsoft.TeamFoundation.Client.dll
-		Dependencies\Microsoft.TeamFoundation.Common.dll = Dependencies\Microsoft.TeamFoundation.Common.dll
-		Dependencies\Microsoft.TeamFoundation.WorkItemTracking.Client.dll = Dependencies\Microsoft.TeamFoundation.WorkItemTracking.Client.dll
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{9705CB4A-3CB8-4829-921D-6661EBB22E3A}"
 	ProjectSection(SolutionItems) = preProject

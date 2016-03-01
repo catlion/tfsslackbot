@@ -1,8 +1,4 @@
-﻿using Microsoft.TeamFoundation.Client;
-using Microsoft.TeamFoundation.Framework.Client;
-using Microsoft.TeamFoundation.Framework.Common;
-using Microsoft.TeamFoundation.WorkItemTracking.Client;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,6 +6,11 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
+using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
+using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
+using Microsoft.VisualStudio.Services.Client;
+using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.WebApi;
 
 namespace SlackBot.Tfs
 {
@@ -27,11 +28,7 @@ namespace SlackBot.Tfs
 
         private static readonly Regex Pattern = new Regex("(^|\\b)tfs(?<id>[0-9]+)", RegexOptions.ExplicitCapture | RegexOptions.IgnoreCase);
 
-        private TfsTeamProjectCollection _teamProjectCollection;
-        private Guid _teamProjectCollectionGuid;
-        private TeamFoundationServer _tfs;
-        private WorkItemStore _wis;
-        private TswaClientHyperlinkService _tswaHyperlink;
+        private WorkItemTrackingHttpClient _witClient;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TfsChatMessageSink"/> class.
@@ -49,22 +46,20 @@ namespace SlackBot.Tfs
         /// <returns>
         /// A <see cref="Task" /> that represents the asynchronous initialize operation.
         /// </returns>
-        /// <exception cref="System.NotImplementedException"></exception>
         public async Task InitializeAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
         {
             await Task.Delay(0);
 
             var element = Configuration.TfsConfigurationSection.Current.Sinks[name];
-            _teamProjectCollection = new TfsTeamProjectCollection(new Uri(element.ProjectCollection));
-            _teamProjectCollectionGuid = _teamProjectCollection.InstanceId;
-            _teamProjectCollection.Connect(ConnectOptions.IncludeServices);
-            _wis = _teamProjectCollection.GetService<WorkItemStore>();
-            if (_wis == null)
-            {
-                throw new Exception("_teamProjectCollection.GetService<WorkItemStore>() returned null");
-            }
 
-            _tswaHyperlink = _teamProjectCollection.GetService<TswaClientHyperlinkService>();
+            // todo: support other auth methods, see the auth samples in https://www.visualstudio.com/en-us/integrate/get-started/client-libraries/samples
+            // * OAuth
+            // * ADD
+            //var vssCredentials = new VssCredentials(); // Active directory auth - NTLM against a Team Foundation Server
+            //var vssCredentials = new VssClientCredentials(); // Visual Studio sign-in prompt. Would need work to make this not prompt at every startup
+            var vssCredentials = new VssBasicCredential("", element.AccessToken);
+            var connection = new VssConnection(new Uri(element.ProjectCollection), vssCredentials);
+            _witClient = connection.GetClient<WorkItemTrackingHttpClient>();
         }
 
         /// <summary>
@@ -76,15 +71,15 @@ namespace SlackBot.Tfs
         /// <returns>
         /// A <see cref="Task{ChatMessageSinkResult}" /> that represents the asynchronous process operation.
         /// </returns>
-        /// <exception cref="System.NotImplementedException"></exception>
         public async Task<ChatMessageSinkResult> ProcessMessageAsync(ISlack slack, Message message, CancellationToken cancellationToken = default(CancellationToken))
         {
+            if (_witClient == null)
+            {
+                throw new InvalidOperationException("WorkItem Client is null");
+            }
+
             await Task.Delay(0);
 
-            if (_wis == null)
-            {
-                throw new InvalidOperationException("WorkItemStore is null");
-            }
             var attachments = new List<Attachment>();
             var matches = Pattern.Matches(message.Text);
             foreach (var id in matches.OfType<Match>().Where(x => x.Success).Select(x => x.Groups["id"]).Where(x => x.Success).Select(x => x.Value))
@@ -92,8 +87,8 @@ namespace SlackBot.Tfs
                 WorkItem wi;
                 try
                 {
-                    wi = _wis.GetWorkItem(XmlConvert.ToInt32(id));
-
+                    // todo: get all at once
+                    wi = await _witClient.GetWorkItemAsync(XmlConvert.ToInt32(id));
                 }
                 catch (VssServiceException ex)
                 {
@@ -107,20 +102,7 @@ namespace SlackBot.Tfs
                     throw;
                 }
 
-                var link = _tswaHyperlink.GetWorkItemEditorUrl(wi.Id);
-
-                var fields = new List<AttachmentField>()
-                    {
-                        new AttachmentField("Assigned To", Convert.ToString(wi[CoreField.AssignedTo]), true),
-                        new AttachmentField("State", wi.State, true),
-                    };
-
-                string color;
-                _colors.TryGetValue(wi.Type.Name, out color);
-
-                attachments.Add(new Attachment(string.Format("{0} {1}: {2}", wi.Type, wi.Id, link), color,
-                    text: string.Format("<{0}|{1} {2} {3}>", SlackEscape(link.ToString()), SlackEscape(wi.Type.Name), id, SlackEscape(wi.Title)),
-                    fields: fields));
+                attachments.Add(WorkItemToAttachment(wi));
             }
 
             if (attachments.Any())
@@ -130,6 +112,64 @@ namespace SlackBot.Tfs
             }
 
             return ChatMessageSinkResult.Continue;
+        }
+
+        private static Attachment WorkItemToAttachment(WorkItem wi)
+        {
+            var fields = new List<AttachmentField>();
+            //AddField(fields, wi, "System.AssignedTo", "Assigned To"); // not available in the response
+            AddField(fields, wi, "System.State", "State");
+
+            //var apiUrl = wi.Url; // useful for seeing the raw json
+            var wiType = GetField(wi, "System.WorkItemType");
+            var wiTitle = GetField(wi, "System.Title");
+            var link = GetLink(wi, "html");
+
+            string color;
+            _colors.TryGetValue(wiType, out color);
+
+            var attachment = new Attachment(string.Format("{0} {1}: {2}", wiType, wi.Id, link), color,
+                text: string.Format("<{0}|{1} {2} {3}>", SlackEscape(link), SlackEscape(wiType), wi.Id, SlackEscape(wiTitle)),
+                fields: fields);
+            return attachment;
+        }
+
+        private static string GetLink(WorkItem wi, string linkName)
+        {
+            if (!wi.Links.Links.ContainsKey(linkName))
+            {
+                throw new Exception(string.Format("Link of type '{0}' not returned from TFS", linkName));
+            }
+            var linkObj = wi.Links.Links[linkName];
+            var referenceLink = linkObj as ReferenceLink;
+            if (referenceLink == null)
+            {
+                throw new Exception(string.Format("Failed to case Link '{0}' to type ReferenceLink", linkName));
+            }
+            return referenceLink.Href;
+        }
+
+        private static void AddField(List<AttachmentField> fields, WorkItem wi, string name, string displayName, bool isShort = true)
+        {
+            if (name == null)
+            {
+                throw new ArgumentNullException("name");
+            }
+            if (string.IsNullOrEmpty(displayName))
+            {
+                displayName = name;
+            }
+            var value = GetField(wi, name);
+            fields.Add(new AttachmentField(displayName, value, isShort));
+        }
+
+        private static string GetField(WorkItem wi, string name)
+        {
+            if (!wi.Fields.ContainsKey(name))
+            {
+                throw new Exception(string.Format("Field '{0}' was not returned by TFS", name));
+            }
+            return wi.Fields[name].ToString();
         }
 
         private static string SlackEscape(string val)
