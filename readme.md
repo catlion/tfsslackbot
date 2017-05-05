@@ -16,7 +16,7 @@ Open up SlackBotService.exe.config and make the following edits:
      `http://mytfs:8080/tfs/MyCollection`)
    * Fill in the project attribute.
    * If using an access token, leave loginMethod="0"
-     * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in. (This is currently the only auth method that this bot supports)
+     * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in.
    * If using standard domain login (TFS 2015 does not support access tokens) set loginMethod="1"
      * Enter your username (including domain if required) into username
      * Enter your password into password
