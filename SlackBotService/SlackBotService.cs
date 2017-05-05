@@ -104,6 +104,7 @@ namespace SlackBot
                 {
                     EventLog.WriteEntry("Connection to Slack lost. Reconnecting in 5 seconds.", EventLogEntryType.Information, 1);
                     await Task.Delay(5000);
+                    if (_isConsole) Console.WriteLine("Reconnecting");
                     await ConnectAsync();
                 }
                 else if (_client.ConnectionState == ClientConnectionState.Established)

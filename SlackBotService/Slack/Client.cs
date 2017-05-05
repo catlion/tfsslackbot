@@ -92,28 +92,39 @@ namespace SlackBot.Slack
             ConnectionState = ClientConnectionState.Connecting;
 
             _token = token;
-            var response = await Http.GetJsonAsync("https://slack.com/api/rtm.start", cancellationToken, "token", _token);
-            if (response["ok"] == "true")
+            try
             {
-                var ws = _websocket = new ClientWebSocket();
+                var response = await Http.GetJsonAsync("https://slack.com/api/rtm.start", cancellationToken, "token", _token);
+                if (response["ok"] == "true")
+                {
+                    var ws = _websocket = new ClientWebSocket();
 
-                if (ConnectionState == ClientConnectionState.Connecting)
-                    await ws.ConnectAsync(new Uri(response["url"]), cancellationToken);
-                ConnectionState = ClientConnectionState.Connected;
+                    if (ConnectionState == ClientConnectionState.Connecting)
+                        await ws.ConnectAsync(new Uri(response["url"]), cancellationToken);
+                    ConnectionState = ClientConnectionState.Connected;
 
-                if (ConnectionState == ClientConnectionState.Connected)
-                    BeginReceive(ws);
+                    if (ConnectionState == ClientConnectionState.Connected)
+                        BeginReceive(ws);
 
-                var self = response.Object("self");
-                Id = self["id"];
+                    var self = response.Object("self");
+                    Id = self["id"];
 
-                var chans = response.ArrayObjects("channels");
+                    var chans = response.ArrayObjects("channels");
+                }
+                else
+                {
+                    ConnectionState = ClientConnectionState.Disconnected;
+                    throw SlackException.FromStatusCode(response["error"]);
+                }
             }
-            else
+            catch(Exception ex)
             {
+                //We need to reset the connection state to disconnected if it fails to connect
+                //so that it will keep retying.
                 ConnectionState = ClientConnectionState.Disconnected;
-                throw SlackException.FromStatusCode(response["error"]);
+                throw;
             }
+            
         }
 
         /// <summary>

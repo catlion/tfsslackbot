@@ -11,11 +11,18 @@ Open up SlackBotService.exe.config and make the following edits:
  * `<client token="" />`
    * Put your [slack bot integration token](https://api.slack.com/bot-users)
      into the token attribute.
- * `<add name="tfs" projectCollection="" project="" accessToekn=""/>`
+ * `<add name="tfs" projectCollection="" project="" loginMethod="0" accessToken="" username="" password="" searchString="" queryGUID=""/>`
    * Put your project collection into the projectCollection attribute:  (e.g.
      `http://mytfs:8080/tfs/MyCollection`)
    * Fill in the project attribute.
-   * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in. (This is currently the only auth method that this bot supports)
+   * If using an access token, leave loginMethod="0"
+     * Get a [Personal Access Token](https://www.visualstudio.com/en-us/get-started/setup/use-personal-access-tokens-to-authenticate) and fill that in. (This is currently the only auth method that this bot supports)
+   * If using standard domain login (TFS 2015 does not support access tokens) set loginMethod="1"
+     * Enter your username (including domain if required) into username
+     * Enter your password into password
+   * If you wish to use the search functionality, set the following items:
+     * Set the search string to something unique (e.g. !searchtfs)
+     * Set the queryGUID to the GUID of a query in your TFS project that will be used for searching.
 
 Open up an elevated developer command prompt and `cd` to the directory, then run:
 
