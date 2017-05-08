@@ -53,5 +53,35 @@ namespace SlackBot.Tfs.Configuration
         {
             get { return (string)base["accessToken"]; }
         }
+
+        [ConfigurationProperty("loginMethod", IsRequired = true)]
+        public int LoginMethod
+        {
+            get { return (int)base["loginMethod"]; }
+        }
+
+        [ConfigurationProperty("username", IsRequired = true)]
+        public string Username
+        {
+            get { return (string)base["username"]; }
+        }
+
+        [ConfigurationProperty("password", IsRequired = true)]
+        public string Password
+        {
+            get { return (string)base["password"]; }
+        }
+
+        [ConfigurationProperty("searchString", IsRequired = true)]
+        public string SearchString
+        {
+            get { return (string)base["searchString"]; }
+        }
+
+        [ConfigurationProperty("queryGUID", IsRequired = true)]
+        public string QueryGUID
+        {
+            get { return (string)base["queryGUID"]; }
+        }
     }
 }

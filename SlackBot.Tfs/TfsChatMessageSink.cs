@@ -11,6 +11,10 @@ using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
 using Microsoft.VisualStudio.Services.Client;
 using Microsoft.VisualStudio.Services.Common;
 using Microsoft.VisualStudio.Services.WebApi;
+using Microsoft.TeamFoundation.Server;
+using System.Net;
+using System.ComponentModel;
+using Microsoft.TeamFoundation.Core.WebApi.Types;
 
 namespace SlackBot.Tfs
 {
@@ -21,14 +25,20 @@ namespace SlackBot.Tfs
     {
         private static Dictionary<string, string> _colors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            { "Bug", "#F35A00" },
-            { "Task", "#005AF3" },
-            { "User Story", "#5A00F3" },
+            { "Bug", "#cc293d" },
+            { "Task", "#f2cb1d" },
+            { "User Story", "#009ccc" },
+            { "Product Backlog Item", "#009ccc" },
+            { "Feature", "#773b93" },
+            { "Epic", "#ff7b00" },
         };
 
-        private static readonly Regex Pattern = new Regex("(^|\\b)tfs(?<id>[0-9]+)", RegexOptions.ExplicitCapture | RegexOptions.IgnoreCase);
+        private static readonly Regex Pattern = new Regex("(^|\\b)tfs ?#?(?<id>[0-9]+)", RegexOptions.ExplicitCapture | RegexOptions.IgnoreCase);
 
         private WorkItemTrackingHttpClient _witClient;
+
+        private string searchString = "";
+        private string workItemQueryGuid = "";
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TfsChatMessageSink"/> class.
@@ -48,18 +58,44 @@ namespace SlackBot.Tfs
         /// </returns>
         public async Task InitializeAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
         {
+
             await Task.Delay(0);
 
             var element = Configuration.TfsConfigurationSection.Current.Sinks[name];
+            searchString = element.SearchString;
+            workItemQueryGuid = element.QueryGUID;
 
             // todo: support other auth methods, see the auth samples in https://www.visualstudio.com/en-us/integrate/get-started/client-libraries/samples
             // * OAuth
             // * ADD
             //var vssCredentials = new VssCredentials(); // Active directory auth - NTLM against a Team Foundation Server
             //var vssCredentials = new VssClientCredentials(); // Visual Studio sign-in prompt. Would need work to make this not prompt at every startup
-            var vssCredentials = new VssBasicCredential("", element.AccessToken);
+
+            VssCredentials vssCredentials;
+            switch (element.LoginMethod)
+            {
+                case 1:
+                    /* this is basic auth if on tfs2015 */
+                    // Ultimately you want a VssCredentials instance so...
+                    NetworkCredential netCred = new NetworkCredential(element.Username, element.Password);
+                    WindowsCredential winCred = new WindowsCredential(netCred);
+                    vssCredentials = new VssClientCredentials(winCred);
+
+                    // Bonus - if you want to remain in control when
+                    // credentials are wrong, set 'CredentialPromptType.DoNotPrompt'.
+                    // This will thrown exception 'TFS30063' (without hanging!).
+                    // Then you can handle accordingly.
+                    vssCredentials.PromptType = CredentialPromptType.DoNotPrompt;
+                    /*********************************************************************/
+                    break;
+                default:
+                    vssCredentials = new VssBasicCredential("", element.AccessToken);
+                    break;
+            }
+
             var connection = new VssConnection(new Uri(element.ProjectCollection), vssCredentials);
             _witClient = connection.GetClient<WorkItemTrackingHttpClient>();
+
         }
 
         /// <summary>
@@ -105,6 +141,26 @@ namespace SlackBot.Tfs
                 attachments.Add(WorkItemToAttachment(wi));
             }
 
+            //Check for !searchtfs command - you can comment this out if you don't want it
+            if (searchString != "" && attachments.Count() == 0 && message.Text.Contains(searchString))
+            {
+                string searchParam = message.Text.Replace(searchString, "").Trim();
+
+                //This query is whatever you want
+                WorkItemQueryResult w = await _witClient.QueryByIdAsync(new TeamContext("Projects"),new Guid(workItemQueryGuid));
+                WorkItem wi;
+                foreach (WorkItemLink w2 in w.WorkItemRelations)
+                {
+                    wi = await _witClient.GetWorkItemAsync(w2.Target.Id);
+
+                    var wiType = GetField(wi, "System.WorkItemType");
+                    if ((wiType == "Bug" || wiType == "Product Backlog Item") && WorkItemMatchesSearch(wi,searchParam))
+                    {
+                        attachments.Add(WorkItemToAttachment(wi));
+                    }
+                }
+            }
+
             if (attachments.Any())
             {
                 await slack.SendAsync(message.CreateReply("", attachments));
@@ -114,11 +170,31 @@ namespace SlackBot.Tfs
             return ChatMessageSinkResult.Continue;
         }
 
+        private bool WorkItemMatchesSearch(WorkItem wi,string search)
+        {
+            bool r = false;
+            if (wi.Fields.ContainsKey("System.AssignedTo"))
+            {
+                if (wi.Fields["System.AssignedTo"].ToString().Contains(search))
+                    r = true;
+            }
+            if (wi.Fields.ContainsKey("System.Title"))
+            {
+                if (wi.Fields["System.Title"].ToString().Contains(search))
+                    r = true;
+            }
+            return r;
+        }
+
         private static Attachment WorkItemToAttachment(WorkItem wi)
         {
             var fields = new List<AttachmentField>();
             //AddField(fields, wi, "System.AssignedTo", "Assigned To"); // not available in the response
             AddField(fields, wi, "System.State", "State");
+            if (wi.Fields.ContainsKey("System.AssignedTo"))
+            {
+                AddField(fields, wi, "System.AssignedTo", "Assigned To: ");
+            }
 
             //var apiUrl = wi.Url; // useful for seeing the raw json
             var wiType = GetField(wi, "System.WorkItemType");
