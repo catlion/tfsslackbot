@@ -1,7 +1,7 @@
 syntax: glob
 
 [Bb]uild/
-
+app.release.config
 ### VisualStudio ###
 
 # User-specific files

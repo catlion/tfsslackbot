@@ -1,14 +1,9 @@
 ﻿using ServiceStack.Text;
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.WebSockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using WebSocket4Net;
 
 namespace SlackBot.Slack
 {
@@ -18,7 +13,7 @@ namespace SlackBot.Slack
     public class Client : ISlack, IDisposable
     {
         private string _token;
-        private ClientWebSocket _websocket;
+        private WebSocket _websocket;
         private bool _isDisposed;
 
         private ClientConnectionState _connectionState;
@@ -88,7 +83,8 @@ namespace SlackBot.Slack
         public async Task OpenAsync(string token, CancellationToken cancellationToken = default(CancellationToken))
         {
             if (_isDisposed) throw new ObjectDisposedException("Client");
-            if (ConnectionState != ClientConnectionState.Disconnected) throw new InvalidOperationException("Client must not be connected.");
+            if (ConnectionState != ClientConnectionState.Disconnected)
+                throw new InvalidOperationException("Client must not be connected.");
             ConnectionState = ClientConnectionState.Connecting;
 
             _token = token;
@@ -97,10 +93,8 @@ namespace SlackBot.Slack
                 var response = await Http.GetJsonAsync("https://slack.com/api/rtm.start", cancellationToken, "token", _token);
                 if (response["ok"] == "true")
                 {
-                    var ws = _websocket = new ClientWebSocket();
-
-                    if (ConnectionState == ClientConnectionState.Connecting)
-                        await ws.ConnectAsync(new Uri(response["url"]), cancellationToken);
+                    var ws = _websocket = new WebSocket(response["url"]);
+                    ws.Open();
                     ConnectionState = ClientConnectionState.Connected;
 
                     if (ConnectionState == ClientConnectionState.Connected)
@@ -131,32 +125,19 @@ namespace SlackBot.Slack
         /// Begins receiving data from a websocket.
         /// </summary>
         /// <param name="ws">The ws.</param>
-        private async void BeginReceive(WebSocket ws)
+        private void BeginReceive(WebSocket ws)
         {
-            try
-            {
-                foreach (var pendingMessage in ws.Streams())
-                {
-                    using (var reader = new StreamReader(await pendingMessage))
-                    {
-                        var obj = JsonObject.Parse(await reader.ReadToEndAsync());
-                        switch (obj["type"])
-                        {
-                            case "hello": ConnectionState = ClientConnectionState.Established; break;
-                            case "message": HandleMessage(obj); break;
-                            default: break;
-                        }
-                    }
-                }
+            ws.MessageReceived += Ws_MessageReceived;
+        }
 
-            }
-            catch (Exception e)
+        private void Ws_MessageReceived(object sender, MessageReceivedEventArgs e)
+        {
+            var obj = JsonObject.Parse(e.Message);
+            switch (obj["type"])
             {
-                var err = Interlocked.CompareExchange(ref Error, null, null);
-                if (err != null) err(this, e);
+                case "hello": ConnectionState = ClientConnectionState.Established; break;
+                case "message": HandleMessage(obj); break;
             }
-
-            await CloseAsync();
         }
 
         /// <summary>
@@ -183,9 +164,7 @@ namespace SlackBot.Slack
         /// <param name="obj">The object.</param>
         private void HandleMessage(JsonObject obj)
         {
-            var mr = Interlocked.CompareExchange(ref MessageReceived, null, null);
-            if (mr != null)
-                mr(this, Json.Message(obj));
+            Interlocked.CompareExchange(ref MessageReceived, null, null)?.Invoke(this, Json.Message(obj));
         }
 
         /// <summary>
@@ -206,7 +185,7 @@ namespace SlackBot.Slack
 
                 try
                 {
-                    await ws.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "Closing", cancellationToken);
+                    ws.Close();
                     ws.Dispose();
                 }
                 catch { }

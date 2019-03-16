@@ -1,20 +1,18 @@
-﻿using System;
+﻿using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
+using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
+using Microsoft.VisualStudio.Services.Client;
+using Microsoft.VisualStudio.Services.Common;
+using Microsoft.VisualStudio.Services.WebApi;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml;
-using Microsoft.TeamFoundation.WorkItemTracking.WebApi;
-using Microsoft.TeamFoundation.WorkItemTracking.WebApi.Models;
-using Microsoft.VisualStudio.Services.Client;
-using Microsoft.VisualStudio.Services.Common;
-using Microsoft.VisualStudio.Services.WebApi;
-using Microsoft.TeamFoundation.Server;
-using System.Net;
-using System.ComponentModel;
-using Microsoft.TeamFoundation.Core.WebApi.Types;
 
 namespace SlackBot.Tfs
 {
@@ -39,6 +37,7 @@ namespace SlackBot.Tfs
 
         private string searchString = "";
         private string workItemQueryGuid = "";
+        private string projectName;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TfsChatMessageSink"/> class.
@@ -64,6 +63,7 @@ namespace SlackBot.Tfs
             var element = Configuration.TfsConfigurationSection.Current.Sinks[name];
             searchString = element.SearchString;
             workItemQueryGuid = element.QueryGUID;
+            projectName = element.Project;
 
             // todo: support other auth methods, see the auth samples in https://www.visualstudio.com/en-us/integrate/get-started/client-libraries/samples
             // * OAuth
@@ -118,7 +118,11 @@ namespace SlackBot.Tfs
 
             var attachments = new List<Attachment>();
             var matches = Pattern.Matches(message.Text);
-            foreach (var id in matches.OfType<Match>().Where(x => x.Success).Select(x => x.Groups["id"]).Where(x => x.Success).Select(x => x.Value))
+            foreach (var id in matches.OfType<Match>()
+                .Where(x => x.Success)
+                .Select(x => x.Groups["id"])
+                .Where(x => x.Success)
+                .Select(x => x.Value))
             {
                 WorkItem wi;
                 try
@@ -142,19 +146,38 @@ namespace SlackBot.Tfs
             }
 
             //Check for !searchtfs command - you can comment this out if you don't want it
-            if (searchString != "" && attachments.Count() == 0 && message.Text.Contains(searchString))
+            if (searchString != "" && !attachments.Any() && message.Text.Contains(searchString))
             {
                 string searchParam = message.Text.Replace(searchString, "").Trim();
 
                 //This query is whatever you want
-                WorkItemQueryResult w = await _witClient.QueryByIdAsync(new TeamContext("Projects"),new Guid(workItemQueryGuid));
-                WorkItem wi;
-                foreach (WorkItemLink w2 in w.WorkItemRelations)
+                //WorkItemQueryResult w = await _witClient.QueryByIdAsync(
+                //    new TeamContext("CustomerPortal"),
+                //new Guid(workItemQueryGuid));
+
+                var query = new Wiql();
+                if (int.TryParse(searchParam, out var id))
                 {
-                    wi = await _witClient.GetWorkItemAsync(w2.Target.Id);
+                    query.Query = $"select * from WorkItems where [System.TeamProject]='{projectName}' " +
+                        $"and [System.Id] = {id}";
+                }
+                else
+                {
+                    var dt = DateTime.Today.AddMonths(-3).ToString(CultureInfo.InvariantCulture);
+                    query.Query = $"select * from WorkItems where [System.TeamProject]='{projectName}' " +
+                        $"and [System.CreatedDate] > '{dt}' " +
+                        $"and ([System.Title] Contains '{searchParam}' " +
+                        $"or [System.AssignedTo] Contains '{searchParam}')";
+                }
+
+                var w = await _witClient.QueryByWiqlAsync(query);
+                WorkItem wi;
+                foreach (var w2 in w.WorkItems)
+                {
+                    wi = await _witClient.GetWorkItemAsync(w2.Id);
 
                     var wiType = GetField(wi, "System.WorkItemType");
-                    if ((wiType == "Bug" || wiType == "Product Backlog Item") && WorkItemMatchesSearch(wi,searchParam))
+                    //if ((wiType == "Bug" || wiType == "Product Backlog Item") && WorkItemMatchesSearch(wi,searchParam))
                     {
                         attachments.Add(WorkItemToAttachment(wi));
                     }
@@ -170,7 +193,7 @@ namespace SlackBot.Tfs
             return ChatMessageSinkResult.Continue;
         }
 
-        private bool WorkItemMatchesSearch(WorkItem wi,string search)
+        private bool WorkItemMatchesSearch(WorkItem wi, string search)
         {
             bool r = false;
             if (wi.Fields.ContainsKey("System.AssignedTo"))

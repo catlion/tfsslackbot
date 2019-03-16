@@ -21,7 +21,7 @@ namespace SlackBot.Tfs.Configuration
         /// <param name="name">The name.</param>
         /// <returns></returns>
         /// <exception cref="System.Collections.Generic.KeyNotFoundException"></exception>
-        public SinkConfigurationElement this[string name]
+        public new SinkConfigurationElement this[string name]
         {
             get
             {
