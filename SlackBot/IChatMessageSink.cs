@@ -16,7 +16,8 @@ namespace SlackBot
         /// Asynchronously initializes the sink.
         /// </summary>
         /// <param name="name">The configuration name of the sink.</param>
-        /// <param name="cancellationToken">A token to monitor for cancellation requests. The default value is <see cref="System.Threading.CancellationToken.None"/>.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests. The default 
+        /// value is <see cref="System.Threading.CancellationToken.None"/>.</param>
         /// <returns>
         /// A <see cref="Task"/> that represents the asynchronous initialize operation.
         /// </returns>
@@ -27,7 +28,8 @@ namespace SlackBot
         /// </summary>
         /// <param name="slack">The slack.</param>
         /// <param name="message">The message.</param>
-        /// <param name="cancellationToken">A token to monitor for cancellation requests. The default value is <see cref="System.Threading.CancellationToken.None"/>.</param>
+        /// <param name="cancellationToken">A token to monitor for cancellation requests. The default 
+        /// value is <see cref="System.Threading.CancellationToken.None"/>.</param>
         /// <returns>
         /// A <see cref="Task{ChatMessageSinkResult}"/> that represents the asynchronous process operation.
         /// </returns>

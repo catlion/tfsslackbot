@@ -78,10 +78,16 @@ namespace SlackBot.Tfs.Configuration
             get { return (string)base["searchString"]; }
         }
 
-        [ConfigurationProperty("queryGUID", IsRequired = true)]
-        public string QueryGUID
+        [ConfigurationProperty("searchPeriodDays", IsRequired = false)]
+        public int SearchPeriodDays
         {
-            get { return (string)base["queryGUID"]; }
+            get
+            {
+                var str = (string)base["searchPeriodDays"] ?? string.Empty;
+                return int.TryParse(str, out var val)
+                    ? val
+                    : 30;
+            }
         }
     }
 }

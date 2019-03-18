@@ -8,7 +8,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,8 +35,8 @@ namespace SlackBot.Tfs
         private WorkItemTrackingHttpClient _witClient;
 
         private string searchString = "";
-        private string workItemQueryGuid = "";
         private string projectName;
+        private TimeSpan searchPeriod;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TfsChatMessageSink"/> class.
@@ -55,15 +54,17 @@ namespace SlackBot.Tfs
         /// <returns>
         /// A <see cref="Task" /> that represents the asynchronous initialize operation.
         /// </returns>
-        public async Task InitializeAsync(string name, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task InitializeAsync(
+            string name, 
+            CancellationToken cancellationToken = default(CancellationToken))
         {
 
             await Task.Delay(0);
 
             var element = Configuration.TfsConfigurationSection.Current.Sinks[name];
             searchString = element.SearchString;
-            workItemQueryGuid = element.QueryGUID;
             projectName = element.Project;
+            searchPeriod = TimeSpan.FromDays(element.SearchPeriodDays);
 
             // todo: support other auth methods, see the auth samples in https://www.visualstudio.com/en-us/integrate/get-started/client-libraries/samples
             // * OAuth
@@ -107,14 +108,15 @@ namespace SlackBot.Tfs
         /// <returns>
         /// A <see cref="Task{ChatMessageSinkResult}" /> that represents the asynchronous process operation.
         /// </returns>
-        public async Task<ChatMessageSinkResult> ProcessMessageAsync(ISlack slack, Message message, CancellationToken cancellationToken = default(CancellationToken))
+        public async Task<ChatMessageSinkResult> ProcessMessageAsync(
+            ISlack slack, 
+            Message message, 
+            CancellationToken cancellationToken = default(CancellationToken))
         {
             if (_witClient == null)
             {
                 throw new InvalidOperationException("WorkItem Client is null");
             }
-
-            await Task.Delay(0);
 
             var attachments = new List<Attachment>();
             var matches = Pattern.Matches(message.Text);
@@ -150,11 +152,6 @@ namespace SlackBot.Tfs
             {
                 string searchParam = message.Text.Replace(searchString, "").Trim();
 
-                //This query is whatever you want
-                //WorkItemQueryResult w = await _witClient.QueryByIdAsync(
-                //    new TeamContext("CustomerPortal"),
-                //new Guid(workItemQueryGuid));
-
                 var query = new Wiql();
                 if (int.TryParse(searchParam, out var id))
                 {
@@ -170,49 +167,29 @@ namespace SlackBot.Tfs
                         $"or [System.AssignedTo] Contains '{searchParam}')";
                 }
 
-                var w = await _witClient.QueryByWiqlAsync(query);
-                WorkItem wi;
+                var w = await _witClient.QueryByWiqlAsync(query).ConfigureAwait(false);
                 foreach (var w2 in w.WorkItems)
                 {
-                    wi = await _witClient.GetWorkItemAsync(w2.Id);
+                    var wi = await _witClient.GetWorkItemAsync(w2.Id).ConfigureAwait(false);
 
                     var wiType = GetField(wi, "System.WorkItemType");
-                    //if ((wiType == "Bug" || wiType == "Product Backlog Item") && WorkItemMatchesSearch(wi,searchParam))
-                    {
-                        attachments.Add(WorkItemToAttachment(wi));
-                    }
+                    attachments.Add(WorkItemToAttachment(wi));
                 }
             }
 
             if (attachments.Any())
             {
-                await slack.SendAsync(message.CreateReply("", attachments));
+                await slack.SendAsync(message.CreateReply("", attachments)).ConfigureAwait(false);
                 return ChatMessageSinkResult.Complete;
             }
 
+            await slack.SendAsync(message.CreateReply("I'm bored. Let's drink!")).ConfigureAwait(false);
             return ChatMessageSinkResult.Continue;
-        }
-
-        private bool WorkItemMatchesSearch(WorkItem wi, string search)
-        {
-            bool r = false;
-            if (wi.Fields.ContainsKey("System.AssignedTo"))
-            {
-                if (wi.Fields["System.AssignedTo"].ToString().Contains(search))
-                    r = true;
-            }
-            if (wi.Fields.ContainsKey("System.Title"))
-            {
-                if (wi.Fields["System.Title"].ToString().Contains(search))
-                    r = true;
-            }
-            return r;
         }
 
         private static Attachment WorkItemToAttachment(WorkItem wi)
         {
             var fields = new List<AttachmentField>();
-            //AddField(fields, wi, "System.AssignedTo", "Assigned To"); // not available in the response
             AddField(fields, wi, "System.State", "State");
             if (wi.Fields.ContainsKey("System.AssignedTo"))
             {
@@ -274,21 +251,7 @@ namespace SlackBot.Tfs
         private static string SlackEscape(string val)
         {
             if (string.IsNullOrEmpty(val)) return val;
-
-            var result = new StringBuilder(val.Length);
-            for (var i = 0; i < val.Length; i++)
-            {
-                var c = val[i];
-                switch (c)
-                {
-                    case '&': result.Append("&amp;"); break;
-                    case '<': result.Append("&lt;"); break;
-                    case '>': result.Append("&gt;"); break;
-                    default: result.Append(c); break;
-                }
-            }
-
-            return result.ToString();
+            return WebUtility.HtmlEncode(val);
         }
     }
 }

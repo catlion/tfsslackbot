@@ -1,10 +1,12 @@
 ﻿using SlackBot.Slack;
+using SlackBot.Tfs;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Linq;
+using System.Reactive.Linq;
 using System.ServiceProcess;
 using System.Text;
 using System.Threading.Tasks;
@@ -15,12 +17,14 @@ namespace SlackBot
     /// Represents a service that communicates with Slack.
     /// </summary>
     [System.ComponentModel.DesignerCategory("")]
-    partial class SlackBotService : ServiceBase
+    internal partial class SlackBotService : ServiceBase
     {
         private Client _client;
         private bool _running;
         private List<IChatMessageSink> _sinks;
         private bool _isConsole;
+        private readonly PullRequestsMonitor prMonitor;
+        private DateTimeOffset lastPRUpdate = DateTimeOffset.UtcNow.AddMinutes(-30);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SlackBotService"/> class.
@@ -28,6 +32,7 @@ namespace SlackBot
         public SlackBotService()
         {
             InitializeComponent();
+            prMonitor = new PullRequestsMonitor("slackTfs");
         }
 
         /// <summary>
@@ -55,7 +60,40 @@ namespace SlackBot
             _client.Error += OnError;
             _client.MessageReceived += OnMessageReceived;
             _sinks = new List<IChatMessageSink>();
-            
+
+            Observable.Timer(TimeSpan.FromMinutes(3))
+                .Subscribe(async _ =>
+                {
+                    var started = DateTimeOffset.UtcNow;
+                    var prs = (await prMonitor.LoadAsync().ConfigureAwait(false))
+                        .Where(x => x.CreationDate >= lastPRUpdate)
+                        .OrderByDescending(x => x.CreationDate)
+                        .ToList();
+
+                    prs.ForEach(pr => Console.WriteLine($"NEW PR: {pr.Title}"));
+
+                    lastPRUpdate = started;
+
+                    if (!prs.Any()) return;
+
+                    var attaches = prs.Select(pr => new Attachment(
+                        pr.Title,
+                        "red",
+                        title: pr.Title,
+                        titleLink: pr.Url,
+                        imageUrl: pr.CreatedBy.ImageUrl))
+                    .ToArray();
+
+                    var msg = new Message(
+                        "general",
+                        "Watch out humans!",
+                        subtype: MessageSubtypes.BotMessage,
+                        attachments: attaches);
+
+                    await _client.SendAsync(msg).ConfigureAwait(false);
+                });
+
+
             foreach (var pendingSink in Configuration.SlackConfigurationSection.Current.Sinks.CreateSinks())
             {
                 try
@@ -81,7 +119,8 @@ namespace SlackBot
         {
             try
             {
-                await _client.OpenAsync(Configuration.SlackConfigurationSection.Current.Client.Token);
+                await _client.OpenAsync(Configuration.SlackConfigurationSection.Current.Client.Token)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -94,7 +133,7 @@ namespace SlackBot
         /// </summary>
         /// <param name="sender">The sender.</param>
         /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        async void OnConnectionStateChanged(object sender, EventArgs e)
+        private async void OnConnectionStateChanged(object sender, EventArgs e)
         {
             if (sender == _client)
             {
@@ -105,7 +144,7 @@ namespace SlackBot
                     EventLog.WriteEntry("Connection to Slack lost. Reconnecting in 5 seconds.", EventLogEntryType.Information, 1);
                     await Task.Delay(5000);
                     if (_isConsole) Console.WriteLine("Reconnecting");
-                    await ConnectAsync();
+                    await ConnectAsync().ConfigureAwait(false);
                 }
                 else if (_client.ConnectionState == ClientConnectionState.Established)
                 {
@@ -120,7 +159,7 @@ namespace SlackBot
         /// </summary>
         /// <param name="sender">The sender.</param>
         /// <param name="e">The e.</param>
-        async void OnMessageReceived(object sender, Message e)
+        private async void OnMessageReceived(object sender, Message e)
         {
             if (e.Subtype == MessageSubtypes.Message && !e.Hidden)
             {
@@ -144,7 +183,7 @@ namespace SlackBot
         /// </summary>
         /// <param name="sender">The sender.</param>
         /// <param name="e">The <see cref="ExceptionEventArgs"/> instance containing the event data.</param>
-        void OnError(object sender, ExceptionEventArgs e)
+        private void OnError(object sender, ExceptionEventArgs e)
         {
             if (_isConsole)
             {
